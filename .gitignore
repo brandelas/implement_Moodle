@@ -166,3 +166,6 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Terraform working directory
+.terraform/
