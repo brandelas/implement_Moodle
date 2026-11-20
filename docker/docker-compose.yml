@@ -18,10 +18,10 @@ services:
     image: postgres:15
     restart: unless-stopped
 
-    # Carrega as variáveis de ambiente a partir do .env.example
-    # TODO: Em produção, use o arquivo .env (sem valores de exemplo)
+    # Carrega as variáveis de ambiente do arquivo .env local (não versionado).
+    # Copie docker/.env.example para docker/.env e ajuste as senhas antes de subir.
     env_file:
-      - .env.example
+      - .env
 
     # Healthcheck: aguarda o PostgreSQL aceitar conexões antes de liberar o Moodle
     healthcheck:
@@ -55,9 +55,10 @@ services:
     ports:
       - "8080:80"
 
-    # Carrega as variáveis de ambiente a partir do .env.example
+    # Carrega as variáveis de ambiente do arquivo .env local (não versionado).
+    # Copie docker/.env.example para docker/.env e ajuste as senhas antes de subir.
     env_file:
-      - .env.example
+      - .env
 
     # Passa as variáveis de conexão ao banco de dados para o contêiner Moodle
     environment:

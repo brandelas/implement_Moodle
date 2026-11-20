@@ -46,7 +46,9 @@ web_modules/
 
 # TypeScript cache
 *.tsbuildinfo
-.kiro/
+
+# Kiro settings (pode conter tokens MCP — specs e workflows são versionados)
+.kiro/settings/mcp.json
 
 # Optional npm cache directory
 .npm
