@@ -12,6 +12,25 @@ As tasks estão ordenadas para minimizar dependências circulares e permitir val
 
 ---
 
+## Status de execução
+
+Atualizado após a implementação. `[x]` = concluída e conferida no código; `[ ]` = depende de execução ainda não registrada.
+
+- [x] TASK-01 — Estrutura de diretórios e arquivos
+- [x] TASK-02 — `variables.tf`
+- [x] TASK-03 — VPC
+- [x] TASK-04 — Subnets públicas
+- [x] TASK-05 — Subnets privadas
+- [x] TASK-06 — Internet Gateway
+- [x] TASK-07 — Route Table pública e associações
+- [x] TASK-08 — Security Group `sg-app`
+- [x] TASK-09 — Security Group `sg-db`
+- [x] TASK-10 — `outputs.tf`
+- [ ] TASK-11 — Validação local (`fmt -check` e `validate`)
+- [ ] TASK-12 — Testes estruturais (`pytest`)
+
+---
+
 ### TASK-01 — Criar estrutura de diretórios e arquivos vazios
 
 **Objetivo:** garantir que os três arquivos obrigatórios existam antes de escrever qualquer recurso.
@@ -192,7 +211,7 @@ resource "aws_route_table_association" "public" {
 ```hcl
 resource "aws_security_group" "sg_app" {
   name        = "${var.project_name}-sg-app"
-  description = "Security Group da EC2 — Moodle"
+  description = "Security Group da EC2 - Moodle (HTTP publico, SSH restrito)"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -237,7 +256,7 @@ resource "aws_security_group" "sg_app" {
 ```hcl
 resource "aws_security_group" "sg_db" {
   name        = "${var.project_name}-sg-db"
-  description = "Security Group do RDS — acesso somente a partir do sg-app"
+  description = "Security Group do RDS - PostgreSQL somente a partir do sg-app"
   vpc_id      = aws_vpc.main.id
 
   ingress {
