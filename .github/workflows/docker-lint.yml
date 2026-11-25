@@ -27,5 +27,11 @@ jobs:
       # TODO: se você tiver um ambiente de testes disponível, pode estender este step
       #       executando `docker compose -f docker/docker-compose.yml up --build -d`
       #       seguido de verificações de health e `docker compose down` ao final
+      # O docker-compose.yml lê o docker/.env, que não é versionado. Para validar
+      # a sintaxe no CI, o .env é criado a partir do .env.example (sem segredos),
+      # como descrito na rubrica de avaliação.
+      - name: Criar .env a partir do .env.example
+        run: cp docker/.env.example docker/.env
+
       - name: Validar docker-compose.yml
         run: docker compose -f docker/docker-compose.yml config --quiet

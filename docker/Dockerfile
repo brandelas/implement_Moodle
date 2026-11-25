@@ -14,6 +14,8 @@ FROM php:8.1-apache
 # Instala as dependências de sistema necessárias para as extensões PHP
 # e ferramentas utilitárias do ambiente de produção
 # -----------------------------------------------------------------------------
+# Lint: versões de pacotes apt não fixadas: a imagem base php:8.1-apache já fixa a distribuição
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # pkg-config — necessário para que o configure do PHP encontre as bibliotecas
     pkg-config \
@@ -56,6 +58,8 @@ RUN docker-php-ext-configure gd --with-jpeg
 #   - zlib    (built-in)
 #   - json    (built-in no PHP 8+)
 # -----------------------------------------------------------------------------
+# Lint: RUN separado do configure para facilitar a leitura e o cache por etapa
+# hadolint ignore=DL3059
 RUN docker-php-ext-install \
     # Codificação multibyte de strings (obrigatório para i18n no Moodle)
     mbstring \
@@ -141,6 +145,8 @@ RUN ln -s /var/moodledata /var/www/moodledata
 # Habilita os módulos Apache necessários para o Moodle
 # (rewrite é obrigatório para URLs limpas)
 # -----------------------------------------------------------------------------
+# Lint: instrução isolada para deixar explícito o módulo Apache exigido pelo Moodle
+# hadolint ignore=DL3059
 RUN a2enmod rewrite
 
 # -----------------------------------------------------------------------------
