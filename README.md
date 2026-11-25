@@ -5,7 +5,79 @@ Este repositório é um **template educacional** para um desafio que combina con
 → **[Leia o desafio completo](CHALLENGE.md)**
 
 
-## Pré-requisitos
+## ✅ Solução implementada — Eloísa Brandão (RA 2325096)
+
+Este fork implementa a infraestrutura AWS do desafio. Resumo do que foi entregue:
+
+| Item | Onde |
+|---|---|
+| Terraform raiz (integra os 3 módulos) | [`terraform/`](terraform/) |
+| Módulo de rede: VPC, 2 subnets públicas + 2 privadas, IGW, route table, `sg-app`/`sg-db` | [`terraform/modules/networking`](terraform/modules/networking) |
+| Módulo de computação: EC2 `t3.micro` AL2023, `LabInstanceProfile`, IMDSv2, swap de 2 GB, `user_data.sh` | [`terraform/modules/compute`](terraform/modules/compute) |
+| Módulo de banco: RDS PostgreSQL 15 `db.t3.micro`, privado, subnet group em 2 AZs | [`terraform/modules/database`](terraform/modules/database) |
+| Documento de arquitetura | [`docs/architecture-design.md`](docs/architecture-design.md) |
+| Workflow de plan (PR com comentário + manual) | [`.github/workflows/terraform-plan.yml`](.github/workflows/terraform-plan.yml) |
+| Specs do Kiro (requirements, design, tasks) | [`.kiro/specs/`](.kiro/specs/) |
+| Evidências (prints) | [`screenshots/`](screenshots/) |
+
+### Pré-requisitos
+
+Docker Engine 24+ com Compose v2, Terraform 1.5+, AWS CLI 2.x, Git, Python 3.8+ e uma sessão ativa do AWS Academy Learner Lab.
+
+### 1. Ambiente local (Windows PowerShell)
+
+```powershell
+cd docker
+Copy-Item .env.example .env        # edite as senhas no .env (nunca commite este arquivo)
+docker compose up -d
+docker compose ps                  # db: healthy | moodle: running
+# Abra http://localhost:8080
+```
+
+### 2. Infraestrutura na AWS
+
+```powershell
+# Credenciais temporárias do Learner Lab ("AWS Details" → AWS CLI) em ~/.aws/credentials
+aws sts get-caller-identity
+
+# Chave SSH (somente a pública vai para o Terraform)
+ssh-keygen -t ed25519 -f $HOME\.ssh\moodle-key
+
+cd terraform
+Copy-Item terraform.tfvars.example terraform.tfvars   # preencha IP /32, chave pública e senhas
+terraform init
+terraform fmt -check -recursive
+terraform validate
+terraform plan -out=tfplan
+terraform apply tfplan              # cria recursos com custo — revise o plan antes
+```
+
+> A EC2 clona este repositório no boot (variáveis `repo_url`/`repo_branch`). O código precisa estar publicado no GitHub, na branch informada, **antes** do `apply`.
+
+### 3. URL pública do Moodle
+
+```powershell
+terraform output moodle_url         # http://ec2-X-X-X-X.compute-1.amazonaws.com
+```
+
+O primeiro boot leva cerca de 15 a 25 minutos numa `t3.micro` (instalação do Docker, build da imagem e `install.php`). Para acompanhar: `ssh -i $HOME\.ssh\moodle-key ec2-user@<DNS>` e depois `sudo tail -f /var/log/user-data-moodle.log`. Para validar: `./scripts/health-check.sh http://<DNS>` ou o workflow **Moodle Health Check**.
+
+### 4. Destruir ao final
+
+```powershell
+terraform destroy
+```
+
+### Testes
+
+```powershell
+pip install pytest hypothesis pyyaml
+pytest tests/ -v
+```
+
+---
+
+## Pré-requisitos (template original)
 
 Antes de começar, verifique se você tem as seguintes ferramentas instaladas e configuradas:
 
@@ -126,13 +198,13 @@ O script realiza **3 verificações** em sequência, com até 3 tentativas (inte
 
 ## Infraestrutura AWS com Terraform
 
-O template **não** entrega os módulos Terraform funcionais — eles são sua tarefa no desafio. A estrutura esperada é composta por **3 módulos** que você cria dentro de `terraform/modules/`:
+Os 3 módulos foram implementados neste fork em `terraform/modules/` e são integrados por `terraform/main.tf`:
 
 | Módulo | Recursos a provisionar |
 |---|---|
-| **`networking`** | VPC, 1 subnet pública + 2 subnets privadas (AZs distintas), Internet Gateway, route tables, Security Group do EC2 (portas 80 e 22) e Security Group do RDS (porta 5432 a partir do SG do EC2) |
-| **`compute`** | Instância EC2 `t3.medium` (Amazon Linux 2023), IAM instance profile `LabRole` via **data source** (não criar `aws_iam_role`), `aws_key_pair`, e `user_data.sh` injetado via `templatefile()` |
-| **`database`** | `aws_db_subnet_group` (2 AZs privadas), `aws_db_instance` PostgreSQL 15 classe `db.t3.micro`, 20 GB, `publicly_accessible = false` |
+| **`networking`** | VPC `10.0.0.0/16`, 2 subnets públicas + 2 privadas (us-east-1a/1b), Internet Gateway, route table pública, `sg-app` (80 público; 22 só do IP `/32`) e `sg-db` (5432 somente a partir do `sg-app`) |
+| **`compute`** | EC2 `t3.micro` (Amazon Linux 2023) com `iam_instance_profile = "LabInstanceProfile"` (sem criar IAM), IMDSv2, `aws_key_pair` e `user_data.sh` via `templatefile()` + `docker-compose.prod.yml` |
+| **`database`** | `aws_db_subnet_group` (2 AZs privadas), `aws_db_instance` PostgreSQL 15 classe `db.t3.micro`, 20 GB, `publicly_accessible = false`; outputs de host, porta, nome, usuário e senha (sensíveis) |
 
 Restrições importantes do AWS Learn Lab: não use `aws_route53_*`, `aws_acm_*`, `aws_cloudfront_*` nem `aws_iam_user`. O DNS público do EC2 substitui o Route 53. Veja os detalhes em [`docs/aws-learn-lab-setup.md`](docs/aws-learn-lab-setup.md).
 
@@ -148,7 +220,7 @@ O repositório inclui pipelines de GitHub Actions em `.github/workflows/`:
 |---|---|---|
 | [`terraform-validate.yml`](.github/workflows/terraform-validate.yml) | `push` / `pull_request` em `main` | Executa `terraform fmt -check` e `terraform validate` (falha listando arquivos com problemas de formatação) |
 | [`docker-lint.yml`](.github/workflows/docker-lint.yml) | `push` / `pull_request` em `main` | Executa `hadolint` no `docker/Dockerfile` |
-| [`terraform-plan.yml`](.github/workflows/terraform-plan.yml) | `workflow_dispatch` | **Stub** com `# TODO:` — você implementa o `terraform plan` configurando os secrets `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` |
+| [`terraform-plan.yml`](.github/workflows/terraform-plan.yml) | `pull_request` em `main` + `workflow_dispatch` | **Implementado:** `init`, `validate` e `plan` com credenciais temporárias (`AWS_SESSION_TOKEN`); publica o plano como comentário na PR e falha se o plan falhar. Secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `TF_SSH_ALLOWED_CIDR`, `TF_EC2_PUBLIC_KEY`, `TF_DB_USERNAME`, `TF_DB_PASSWORD`, `TF_MOODLE_ADMIN_PASSWORD` |
 | [`health-check.yml`](.github/workflows/health-check.yml) | `workflow_dispatch` (input `moodle_url`) | Torna `health-check.sh` executável e o roda contra a URL informada |
 
 > Cada step dos workflows contém um comentário explicativo descrevendo o que a etapa faz.

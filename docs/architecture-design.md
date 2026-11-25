@@ -2,20 +2,21 @@
 
 **Projeto:** Moodle Docker AWS Challenge  
 **Disciplina:** DevOps — ADS UniFAAT 2026.2  
-**Ambiente de nuvem:** AWS Learn Lab (us-east-1)  
-**Ferramenta de IaC:** Terraform ~> 1.5, provider AWS ~> 5.0
+**Aluna:** Eloísa Brandão — RA 2325096  
+**Ambiente de nuvem:** AWS Academy Learner Lab (`us-east-1`)  
+**Ferramenta de IaC:** Terraform >= 1.5, provider AWS ~> 5.0
 
 ---
 
 ## Visão Geral
 
-Esta solução implanta o Moodle 4.1 na AWS usando exclusivamente recursos compatíveis com o AWS Learn Lab. O Moodle roda em um contêiner Docker sobre uma instância EC2 `t3.medium` com Amazon Linux 2023, e persiste dados em um banco RDS PostgreSQL 15 (`db.t3.micro`) isolado em subnets privadas.
+Esta solução implanta o Moodle 4.1 na AWS usando apenas recursos compatíveis com o AWS Academy Learner Lab. O Moodle roda em um contêiner Docker em uma instância EC2 `t3.micro` com Amazon Linux 2023, e persiste os dados em um banco RDS PostgreSQL 15 (`db.t3.micro`) isolado em subnets privadas.
 
-Toda a infraestrutura é provisionada via Terraform, organizada em três módulos independentes: `networking` (VPC e rede), `compute` (EC2) e `database` (RDS). Essa separação permite validar e evoluir cada camada sem afetar as demais.
+Toda a infraestrutura é provisionada via Terraform, em três módulos (`networking`, `compute` e `database`) integrados pela configuração raiz em `terraform/`. Cada módulo pode ser validado isoladamente, e a ordem de criação é resolvida pelas referências entre eles: rede → banco → EC2.
 
-O ambiente Docker local (`docker compose up -d`) serve como referência de desenvolvimento e validação antes do deploy na nuvem. A intenção é manter compatibilidade de configuração entre os dois ambientes no que se refere à versão do PostgreSQL (15) e às configurações essenciais de conexão, viabilizada pelo script `user_data.sh` que será implementado no módulo `compute`.
+O ambiente Docker local (`docker/docker-compose.yml`) é a referência de desenvolvimento. Na nuvem, o mesmo `Dockerfile` é reutilizado por um Compose de produção (`terraform/modules/compute/docker-compose.prod.yml`) que não tem serviço de banco: o Moodle conecta-se diretamente ao RDS. O script `user_data.sh` instala o Docker, gera o `.env` com as credenciais, aguarda o RDS, sobe o contêiner e executa o instalador CLI do Moodle no primeiro boot.
 
-O AWS Learn Lab impõe restrições que moldam diretamente as decisões de arquitetura: não é possível criar IAM roles, nem usar Route 53, ACM ou CloudFront. Por isso o Moodle é exposto via HTTP na porta 80, usando o DNS público automático da EC2, e o acesso IAM da instância é obtido através do instance profile `LabRole` pré-existente, referenciado como data source.
+As restrições do Learner Lab moldam a arquitetura: não é possível criar recursos IAM, nem usar Route 53, ACM ou CloudFront. Por isso o Moodle é exposto via HTTP na porta 80 pelo DNS público automático da EC2, e a instância usa o instance profile pré-existente `LabInstanceProfile` (role `LabRole`).
 
 ---
 
@@ -23,194 +24,180 @@ O AWS Learn Lab impõe restrições que moldam diretamente as decisões de arqui
 
 ```mermaid
 graph TD
-    INTERNET["🌐 Internet"]
+    USER["👤 Usuário (navegador)"]
+    ADMIN["🔑 Administradora<br/>IP /32"]
 
-    subgraph VPC["VPC — 10.0.0.0/16 (us-east-1)"]
+    subgraph VPC["VPC moodle-vpc — 10.0.0.0/16 (us-east-1)"]
 
         IGW["Internet Gateway"]
+        RT["Route Table pública<br/>0.0.0.0/0 → IGW"]
 
-        subgraph PUB["Subnet Pública — 10.0.1.0/24 (us-east-1a)"]
-            RT["Route Table Pública\nassociada a esta subnet\nrota: 0.0.0.0/0 → IGW"]
-            SG_EC2["Security Group — EC2\nIngresso TCP 80: 0.0.0.0/0\nIngresso TCP 22: IP restrito\nEgresso: irrestrito"]
-            EC2["EC2 t3.medium\nAmazon Linux 2023\nDocker + Moodle 4.1\nPorta 80"]
+        subgraph AZA["us-east-1a"]
+            PUB1["Subnet pública 1<br/>10.0.1.0/24"]
+            PRIV1["Subnet privada 1<br/>10.0.3.0/24"]
         end
 
-        subgraph PRIV_A["Subnet Privada AZ-A — 10.0.2.0/24 (us-east-1a)"]
-            SG_RDS["Security Group — RDS\nIngresso TCP 5432\norigem: SG EC2 apenas"]
-            RDS["RDS PostgreSQL 15\ndb.t3.micro · 20 GB gp2\npublicly_accessible = false"]
+        subgraph AZB["us-east-1b"]
+            PUB2["Subnet pública 2<br/>10.0.2.0/24<br/>(reservada, sem instância)"]
+            PRIV2["Subnet privada 2<br/>10.0.4.0/24"]
         end
 
-        subgraph PRIV_B["Subnet Privada AZ-B — 10.0.3.0/24 (us-east-1b)"]
-            NOTE["Subnet do grupo RDS\nSem instância ativa\nExigida pelo aws_db_subnet_group\npara cobrir 2 AZs distintas"]
+        subgraph SGAPP["sg-app: 80 de 0.0.0.0/0 · 22 do IP /32 · saída livre"]
+            EC2["EC2 t3.micro · Amazon Linux 2023<br/>Docker + Moodle 4.1 (Apache :80)<br/>IMDSv2 · EBS gp3 16 GB criptografado · swap 2 GB"]
         end
 
+        subgraph SGDB["sg-db: 5432 somente a partir do sg-app"]
+            RDS["RDS PostgreSQL 15 · db.t3.micro<br/>20 GB gp2 · publicly_accessible = false"]
+        end
+
+        DBSG["DB Subnet Group<br/>subnets privadas 1 e 2"]
     end
 
-    LABROLE["LabRole\nIAM Instance Profile\nvia data source"]
+    PROFILE["LabInstanceProfile<br/>(role LabRole, pré-existente)"]
 
-    INTERNET -->|"HTTP :80"| IGW
-    VPC -. "associado à VPC" .- IGW
-    RT -. "rota padrão" .-> IGW
+    USER -->|"HTTP :80"| IGW
+    ADMIN -->|"SSH :22"| IGW
+    IGW --> RT
+    RT --> PUB1
+    RT --> PUB2
+    PUB1 --- EC2
     EC2 -->|"TCP :5432"| RDS
-    RDS -. "subnet group" .-> NOTE
-    EC2 -. "instance profile" .-> LABROLE
+    DBSG --- PRIV1
+    DBSG --- PRIV2
+    RDS --- DBSG
+    EC2 -. "instance profile" .-> PROFILE
 ```
 
-> **Nota sobre a Subnet Privada AZ-B:** o recurso `aws_db_subnet_group` do Terraform exige ao menos duas subnets em Availability Zones distintas. A subnet `10.0.3.0/24` em `us-east-1b` cumpre esse requisito técnico, mas não hospeda nenhuma instância RDS ativa — o banco roda exclusivamente em `us-east-1a`. A segunda subnet existe para satisfazer a API da AWS, não para Alta Disponibilidade.
+**Fluxo de dados:** Internet → Internet Gateway → Route Table pública → EC2 (sg-app, porta 80) → contêiner Moodle → RDS (sg-db, porta 5432) nas subnets privadas. As subnets privadas não têm rota para o Internet Gateway; o tráfego de retorno do RDS segue a rota local da VPC.
+
+> **Subnets em duas AZs:** o `aws_db_subnet_group` exige subnets em pelo menos duas AZs. O RDS é Single-AZ e a AWS escolhe em qual das duas subnets privadas ele fica. A segunda subnet pública (`us-east-1b`) atende ao enunciado da prova ("pelo menos 2 subnets públicas em AZs diferentes") e permite evoluir para um Load Balancer, que exige duas AZs. Hoje ela não hospeda nenhuma instância.
 
 ---
 
 ## Decisões de Design
 
-A tabela abaixo distingue configurações **fixadas pelo enunciado do desafio** de decisões **tomadas no projeto** com base em restrições técnicas ou de custo.
+A tabela distingue o que foi **fixado pelos requisitos** do que foi **decidido no projeto**.
 
-| Componente | Escolha | Origem da decisão | Justificativa |
+| Componente | Escolha | Origem | Justificativa |
 |---|---|---|---|
-| Tipo da instância EC2 | `t3.medium` | Fixado pelo enunciado | Especificação direta do CHALLENGE.md. 2 vCPUs e 4 GB RAM são suficientes para executar o Moodle em um contêiner Docker com carga educacional. |
-| Engine do banco | RDS PostgreSQL 15 | Fixado pelo enunciado | Mantém paridade com o ambiente Docker local (`postgres:15`), eliminando diferenças de comportamento entre desenvolvimento e nuvem. |
-| Classe da instância RDS | `db.t3.micro` | Fixado pelo enunciado | Especificação direta do CHALLENGE.md. Instância de baixo custo, adequada ao volume de dados de um ambiente de estudo. |
-| AMI da EC2 | Amazon Linux 2023 | Fixado pelo enunciado | Especificação direta do CHALLENGE.md. Distribuição mantida pela AWS, com suporte a Docker via `dnf` e atualizações de segurança regulares. |
-| Topologia de rede | 1 subnet pública + 2 privadas | Decisão do projeto | EC2 precisa de acesso externo (HTTP e SSH), portanto fica em subnet pública com `map_public_ip_on_launch = true`. O RDS nunca deve ser exposto à internet, portanto fica em subnet privada. Duas AZs privadas são exigidas pela API do `aws_db_subnet_group`. |
-| Acesso IAM da EC2 | `LabRole` via data source | Restrição do ambiente | O AWS Learn Lab bloqueia a criação de `aws_iam_role`, `aws_iam_role_policy` e `aws_iam_instance_profile`. O `LabRole` pré-existente é a única opção disponível e deve ser referenciado via `data "aws_iam_instance_profile"`. |
-| Protocolo de acesso | HTTP porta 80, sem TLS | Restrição do ambiente | O AWS Learn Lab não disponibiliza ACM nem CloudFront. Considerando essas restrições e o escopo educacional do desafio, a implementação utiliza HTTP na porta 80, sem configurar TLS. |
-| DNS da EC2 | DNS público automático da AWS | Restrição do ambiente | Route 53 é bloqueado no Learn Lab. O DNS no formato `ec2-X-X-X-X.compute-1.amazonaws.com` é gerado automaticamente e suficiente para acessar o Moodle. |
-| Backend do Terraform | Local (padrão) | Decisão do projeto | Configurar um backend S3 exigiria provisionar bucket e tabela DynamoDB previamente. Para um desafio individual com sessões temporárias de 4h, o backend local é mais prático. O `terraform.tfstate` é ignorado pelo `.gitignore`. |
-| `publicly_accessible` do RDS | `false` | Decisão do projeto (boa prática) | Impede que o RDS receba um endpoint público. Combinado com as subnets privadas e o Security Group restrito, garante que o banco seja acessível apenas pela EC2. |
+| Tipo da EC2 | `t3.micro` (variável `ec2_instance_type`) | Enunciado da prova | O enunciado da prova exige `t3.micro` e, por ser o requisito mais específico, prevalece sobre a rubrica genérica do template (`t3.medium`). Como 1 GB de RAM é pouco para compilar a imagem Docker e executar o `install.php`, o `user_data.sh` cria um swap de 2 GB antes do build. |
+| AMI | Amazon Linux 2023 (data source `aws_ami`, mais recente) | Rubrica | Mantida pela AWS, com Docker 24+ no repositório `dnf`. O data source evita fixar um ID de AMI, que muda por região e por atualização. |
+| Engine e classe do banco | RDS PostgreSQL 15, `db.t3.micro`, 20 GB gp2 | Rubrica / prova | Mesma versão major do ambiente local (`postgres:15`); menor classe compatível, suficiente para carga de estudo. |
+| Topologia de rede | 2 subnets públicas + 2 privadas em `us-east-1a`/`us-east-1b` | Prova + decisão | Duas AZs exigidas pelo DB Subnet Group e pelo enunciado. A EC2 fica na subnet pública 1 (`map_public_ip_on_launch = true`); o RDS fica nas privadas, sem rota para a internet. |
+| Blocos CIDR | VPC `10.0.0.0/16`; públicas `10.0.1.0/24`, `10.0.2.0/24`; privadas `10.0.3.0/24`, `10.0.4.0/24` | Decisão do projeto | Faixa privada RFC 1918 com espaço para crescer; /24 (251 IPs úteis) por subnet é mais que suficiente. |
+| Perfil IAM da EC2 | `iam_instance_profile = "LabInstanceProfile"` | Prova / restrição do Learner Lab | O Learner Lab bloqueia a criação de roles e instance profiles. O enunciado da prova pede o perfil pré-existente `LabInstanceProfile`, associado à role `LabRole`. Ele é passado por nome, sem nenhum bloco `resource` ou `data` de IAM. |
+| Metadados da EC2 | IMDSv2 obrigatório (`http_tokens = "required"`, hop limit 1) | Decisão (segurança) | Bloqueia o IMDSv1, explorável por SSRF; com hop limit 1, os contêineres não alcançam o IMDS. |
+| Implantação do Moodle | `user_data.sh` via `templatefile()` + `docker-compose.prod.yml` + instalador CLI | Decisão do projeto | Deploy reproduzível sem intervenção manual: no primeiro boot, o Moodle já sobe instalado e configurado com o RDS e com o DNS público da EC2 como `wwwroot`. |
+| Passagem de credenciais | Variáveis `sensitive` → outputs do módulo database → Base64 no user_data → `.env` com `chmod 600` | Decisão do projeto | Nenhuma senha no código. O Base64 apenas protege caracteres especiais contra o Bash; **não é criptografia** (ver Segurança). |
+| Protocolo e DNS | HTTP na porta 80, DNS público da EC2 | Restrição do Learner Lab | ACM, CloudFront e Route 53 não estão disponíveis. |
+| Backend do Terraform | Local | Decisão do projeto | Um backend S3 + DynamoDB exigiria criar bucket e tabela fora do Terraform, e as sessões do Learner Lab são temporárias. O `terraform.tfstate` é ignorado pelo `.gitignore` e tratado como sensível. |
+| CI do plan | `terraform-plan.yml` em PR (com comentário) e manual | Prova + rubrica | O enunciado exige execução em PR com o plano comentado; a rubrica exige `workflow_dispatch`. O workflow tem os dois gatilhos e falha se o plan falhar. |
 
 ---
 
 ## Componentes
 
-### VPC
+### Módulo `networking` (`terraform/modules/networking`)
 
-A VPC centraliza toda a infraestrutura da solução em um bloco de endereçamento privado isolado.
+| Recurso | Configuração | Função |
+|---|---|---|
+| `aws_vpc.main` | `10.0.0.0/16`, DNS support e DNS hostnames habilitados | Rede isolada da solução. Os DNS hostnames são necessários para a EC2 receber um nome público. |
+| `aws_subnet.public[0..1]` | `10.0.1.0/24` (1a), `10.0.2.0/24` (1b), IP público automático | Subnets com saída para a internet; a EC2 fica na primeira. |
+| `aws_subnet.private[0..1]` | `10.0.3.0/24` (1a), `10.0.4.0/24` (1b), sem IP público | Subnets isoladas para o RDS. |
+| `aws_internet_gateway.main` | Associado à VPC | Entrada e saída de internet para as subnets públicas. |
+| `aws_route_table.public` + 2 associações | `0.0.0.0/0 → IGW`, associada só às subnets públicas | As subnets privadas usam a route table principal (apenas rota local). |
+| `aws_security_group.sg_app` | Entrada 80/tcp de `0.0.0.0/0`; 22/tcp só de `var.ssh_allowed_cidr` (validado como `/32`); saída livre | Firewall da EC2. A saída livre é necessária para `dnf`, download do Moodle e do Compose, e conexão ao RDS. |
+| `aws_security_group.sg_db` | Entrada 5432/tcp com origem `sg_app` (referência por SG, não por CIDR) | Firewall do RDS com menor privilégio. |
 
-- **CIDR:** `10.0.0.0/16`
-- **Região:** `us-east-1`
-- **DNS hostnames:** habilitado (`enable_dns_hostnames = true`) — necessário para que a EC2 receba um DNS público resolvível externamente
-- **Recurso Terraform:** `aws_vpc`
+### Módulo `database` (`terraform/modules/database`)
 
-### Subnets
+| Recurso | Configuração | Função |
+|---|---|---|
+| `aws_db_subnet_group.main` | As 2 subnets privadas (validação: exatamente 2 IDs) | Define onde o RDS pode ser criado (2 AZs). |
+| `aws_db_instance.main` | PostgreSQL `15`, `db.t3.micro`, 20 GB gp2, Single-AZ, `publicly_accessible = false`, `vpc_security_group_ids = [sg_db]`, `skip_final_snapshot` configurável | Banco gerenciado do Moodle, sem endpoint público. |
 
-| Nome | Tipo | CIDR | AZ | Recurso hospedado |
-|---|---|---|---|---|
-| Subnet pública | Pública | `10.0.1.0/24` | `us-east-1a` | EC2 (Moodle) |
-| Subnet privada AZ-A | Privada | `10.0.2.0/24` | `us-east-1a` | RDS PostgreSQL 15 |
-| Subnet privada AZ-B | Privada | `10.0.3.0/24` | `us-east-1b` | Apenas subnet group (sem instância ativa) |
+**Outputs:** `rds_endpoint` (host:porta), `db_host`, `rds_port`, `db_name`, `db_username` (sensível) e `db_password` (sensível), consumidos pelo módulo `compute`.
 
-A subnet pública tem `map_public_ip_on_launch = true` para que a EC2 receba IP público automaticamente. As subnets privadas não têm rota para o Internet Gateway.
+### Módulo `compute` (`terraform/modules/compute`)
 
-### Internet Gateway e Route Table
+| Recurso | Configuração | Função |
+|---|---|---|
+| `data.aws_ami.amazon_linux_2023` | Owner `amazon`, `al2023-ami-2023*-x86_64`, mais recente | Seleciona a AMI sem fixar um ID. |
+| `aws_key_pair.main` | Chave **pública** via `var.ec2_public_key` | Acesso SSH; a chave privada nunca sai da máquina local. |
+| `aws_instance.main` | `t3.micro`, subnet pública 1, `sg_app`, `LabInstanceProfile`, IMDSv2, EBS gp3 16 GB criptografado, `user_data_replace_on_change = true` | Servidor do Moodle. |
+| `user_data.sh` | Template renderizado com `templatefile()` | Script de boot (detalhado abaixo). |
+| `docker-compose.prod.yml` | Serviço `moodle` (build de `docker/Dockerfile`), porta 80, volume `moodle_www` em `/var/moodledata`, `.env` lido com `format: raw` | Sobe o Moodle sem banco local. |
 
-O Internet Gateway (recurso `aws_internet_gateway`) é associado à VPC e permite que a subnet pública envie e receba tráfego da internet.
+**Etapas do `user_data.sh`:** cria um swap de 2 GB → atualiza pacotes → instala `git`, `jq` e `postgresql15` (`pg_isready`) → instala Docker (verifica >= 24) e o plugin Compose v2 (verifica >= 2.30) → habilita o Docker → obtém o DNS público via IMDSv2 → clona o repositório (`repo_url`/`repo_branch`) → decodifica as credenciais e gera `docker/.env` (`chmod 600`) → aguarda o RDS com `pg_isready` → `docker compose up -d` → aguarda o Apache → executa `admin/cli/install.php` como `www-data` (ou, se o `config.php` já existir, só verifica) → restringe as permissões do `config.php`. O log fica em `/var/log/user-data-moodle.log`, sem imprimir credenciais.
 
-A Route Table pública (`aws_route_table`) contém a rota padrão `0.0.0.0/0 → IGW` e é associada à subnet pública via `aws_route_table_association`. As subnets privadas não devem possuir rota para o Internet Gateway — esse isolamento é o requisito que garante que o RDS não seja alcançável diretamente pela internet.
+**Outputs:** `public_ip`, `public_dns` e `instance_id`.
 
-### Security Group — EC2
+### Configuração raiz (`terraform/`)
 
-Controla o tráfego de entrada e saída da instância EC2.
-
-| Direção | Protocolo | Porta | Origem/Destino | Finalidade |
-|---|---|---|---|---|
-| Ingresso | TCP | 80 | `0.0.0.0/0` | Acesso HTTP ao Moodle |
-| Ingresso | TCP | 22 | `var.ssh_allowed_cidr` | Acesso SSH administrativo |
-| Egresso | Todos | Todos | `0.0.0.0/0` | Permite que a EC2 acesse a internet (pull de imagens Docker, atualizações) — egresso irrestrito previsto nesta arquitetura |
-
-A variável `ssh_allowed_cidr` tem valor padrão `0.0.0.0/0`, conforme definido no desafio para facilitar o ambiente de estudo. **Essa configuração é permissiva: expõe a porta 22 a qualquer origem na internet e não deve ser usada em ambientes de produção.** Sempre que possível, substitua o valor padrão pelo IP administrativo com máscara `/32` (por exemplo, `203.0.113.10/32`) no arquivo `terraform.tfvars`, que é ignorado pelo `.gitignore`.
-
-### Security Group — RDS
-
-Controla o tráfego de entrada da instância RDS.
-
-| Direção | Protocolo | Porta | Origem | Finalidade |
-|---|---|---|---|---|
-| Ingresso | TCP | 5432 | ID do Security Group da EC2 | Permite conexões PostgreSQL apenas da aplicação |
-
-A origem do ingresso referencia o **ID do Security Group da EC2** (`security_groups = [var.ec2_security_group_id]`), não um bloco CIDR. Isso garante que apenas instâncias EC2 associadas ao SG correto possam conectar ao banco, independentemente de IP.
-
-### Instância EC2
-
-- **Tipo:** `t3.medium` (2 vCPU, 4 GB RAM)
-- **AMI:** Amazon Linux 2023, especificada via AMI fixa ou data source `aws_ami`
-- **Subnet:** pública (`10.0.1.0/24`, `us-east-1a`)
-- **IP público:** atribuído automaticamente (`map_public_ip_on_launch = true` na subnet)
-- **Key pair:** criado via `aws_key_pair` com a chave pública fornecida em `var.ec2_public_key`
-- **IAM Instance Profile:** `LabRole` referenciado via `data "aws_iam_instance_profile"`
-- **User data:** script `user_data.sh` a ser implementado no módulo `compute`, responsável por instalar Docker 24+, Docker Compose v2 e executar `docker compose up -d` no boot da instância
-
-### RDS PostgreSQL
-
-- **Engine:** PostgreSQL 15
-- **Classe:** `db.t3.micro`
-- **Armazenamento:** 20 GB, tipo `gp2`
-- **Multi-AZ:** não previsto na implementação atual (ambiente educacional sem requisito de alta disponibilidade; o atributo `multi_az` não é especificado pelo enunciado do desafio)
-- **`publicly_accessible`:** `false`
-- **Subnet group:** cobre as duas subnets privadas (`us-east-1a` e `us-east-1b`)
-- **Recurso Terraform:** `aws_db_instance` + `aws_db_subnet_group`
-- **Credenciais:** fornecidas via variáveis `db_username` e `db_password`, ambas declaradas com `sensitive = true`
+`versions.tf` (Terraform >= 1.5, AWS ~> 5.0, provider fixo em `us-east-1` com `default_tags`), `main.tf` (integra os módulos), `variables.tf`, `outputs.tf` (`vpc_id`, `ec2_public_dns`, `ec2_public_ip`, `rds_endpoint`, `moodle_url`) e `terraform.tfvars.example` (modelo sem segredos).
 
 ---
 
 ## Segurança
 
-A solução aplica múltiplas camadas de proteção, seguindo o princípio de defesa em profundidade.
+**Isolamento de rede do banco.** O RDS fica em subnets privadas, sem rota para o Internet Gateway, tem `publicly_accessible = false` (sem endpoint público) e o `sg-db` aceita apenas a porta 5432 com origem no `sg-app`. Somente a EC2 do Moodle alcança o banco, e só por dentro da VPC.
 
-**Isolamento de rede:** o RDS está em subnets privadas cujas route tables não possuem rota padrão `0.0.0.0/0` direcionada ao Internet Gateway. Isso impede que tráfego originado da internet alcance diretamente o banco. Combinado com `publicly_accessible = false` — que impede a atribuição de endpoint público ao RDS — e com o Security Group do RDS, que permite conexões na porta TCP 5432 exclusivamente com origem no Security Group da EC2, o acesso ao banco fica restrito à aplicação dentro da própria VPC.
+**Menor privilégio nos Security Groups.** O `sg-db` referencia o Security Group da aplicação, e não um bloco CIDR: a permissão acompanha a instância, não um endereço IP. O SSH no `sg-app` é limitado a `var.ssh_allowed_cidr`, uma variável obrigatória, sem valor padrão e validada para aceitar apenas um IPv4 `/32`. Assim, `0.0.0.0/0` é rejeitado pelo próprio Terraform.
 
-**Regras de Security Group com menor privilégio:** o SG do RDS aceita conexões na porta 5432 apenas com origem no SG da EC2 — não em blocos CIDR abertos. Isso significa que somente instâncias EC2 associadas ao SG correto podem conectar ao banco, independentemente de onde estejam na rede.
+**Sem recursos IAM.** Nenhum `aws_iam_*` é declarado. A EC2 usa o perfil pré-existente `LabInstanceProfile`.
 
-**`publicly_accessible = false`:** o RDS não recebe endpoint público. Combinado com as subnets privadas, garante que o banco seja inacessível diretamente pela internet.
+**IMDSv2 e disco criptografado.** O IMDSv1 é desativado (`http_tokens = "required"`) e o hop limit 1 impede que contêineres consultem o IMDS. O volume raiz é criptografado (`encrypted = true`).
 
-**Credenciais fora do código:** senhas do banco de dados e chave pública SSH são fornecidas via `terraform.tfvars` (ignorado pelo `.gitignore`) e declaradas com `sensitive = true` no Terraform. O `docker-compose.yml` usa interpolação `${VAR}` via arquivo `.env` (também ignorado pelo `.gitignore`) — nenhuma senha aparece em texto literal em arquivos versionados.
+**Proteção das credenciais:**
+- Nenhuma senha em arquivos versionados. As credenciais entram por `terraform.tfvars` (ignorado pelo `.gitignore`) ou por variáveis `TF_VAR_*` vindas de GitHub Secrets no CI.
+- `db_username`, `db_password` e `moodle_admin_password` são `sensitive = true` e não aparecem no plan/apply. `ssh_allowed_cidr` também é sensível na raiz, para não publicar o IP da administradora no comentário da PR.
+- Riscos residuais documentados: o `terraform.tfstate` guarda os valores sensíveis em texto legível (por isso é ignorado e nunca commitado); o user_data, legível via IMDS dentro da EC2, contém as credenciais em Base64, que é só codificação e **não criptografia**; na EC2, o `.env` tem `chmod 600` (somente root). Fora do Learner Lab, a evolução natural é o AWS Secrets Manager com `manage_master_user_password`.
+- No ambiente local, o `docker-compose.yml` lê as variáveis do `docker/.env` (ignorado); o repositório contém apenas o `.env.example`.
 
-**Acesso SSH por variável de CIDR:** a porta 22 da EC2 é liberada para o valor de `var.ssh_allowed_cidr`. O valor padrão `0.0.0.0/0` é definido pelo desafio para facilitar o ambiente de estudo, mas **é uma configuração permissiva que expõe a porta SSH a qualquer endereço IP**. Recomenda-se fortemente substituir esse valor pelo IP administrativo com máscara `/32` no arquivo `terraform.tfvars` antes de executar `terraform apply`.
-
-**LabRole via data source:** nenhum recurso IAM é criado (`aws_iam_role`, `aws_iam_role_policy`, `aws_iam_instance_profile`). O `LabRole` pré-existente é referenciado via `data "aws_iam_instance_profile"`, respeitando as restrições do Learn Lab e o princípio de não criar permissões desnecessárias.
-
-**Estado do Terraform:** o `terraform.tfstate` é ignorado pelo `.gitignore`. O estado local pode conter valores de atributos sensíveis em texto claro — mantê-lo fora do repositório é obrigatório.
-
-**Sem Route 53, ACM ou CloudFront:** esses serviços são bloqueados no Learn Lab. A solução não os referencia, evitando erros de `AccessDenied` no `terraform apply`.
+**State e CI.** `.terraform/`, `*.tfstate`, `*.tfstate.*`, `*.tfvars`, `*.pem`, `*.key` e `id_rsa` estão no `.gitignore`. O workflow de plan usa permissões mínimas (`contents: read`, `pull-requests: write`) e credenciais temporárias com `AWS_SESSION_TOKEN`.
 
 ---
 
 ## Escalabilidade
 
-A arquitetura atual é adequada para o objetivo educacional, mas tem limitações conhecidas em relação a um ambiente de produção real.
+A arquitetura atende ao objetivo educacional, mas tem limitações conhecidas em relação a produção:
 
-**Limitações do ambiente atual:**
+- **EC2 única, sem Auto Scaling:** não tolera falha da instância nem da AZ `us-east-1a`.
+- **RDS Single-AZ:** sem standby síncrono; uma falha da AZ derruba o banco.
+- **Sem Load Balancer:** a URL pública depende do DNS da instância, que muda se ela for recriada.
+- **HTTP sem TLS:** credenciais trafegam sem criptografia (ACM indisponível no Learner Lab).
+- **Dados locais na EC2:** `/var/moodledata` e o `config.php` ficam no disco da instância; recriar a EC2 exige reinstalar o Moodle (o banco no RDS é preservado).
 
-- **EC2 única, sem Auto Scaling:** uma única instância não tolera falhas de hardware. Em produção, um Auto Scaling Group com mínimo de 2 instâncias em AZs distintas resolveria esse ponto.
-- **RDS sem Multi-AZ:** o enunciado do desafio não especifica o atributo `multi_az`. Na implementação planejada, `multi_az = false` para manter o custo mínimo. Em produção, `multi_az = true` manteria uma réplica síncrona em standby em outra AZ.
-- **Sem Load Balancer:** o acesso direto ao DNS da EC2 não permite distribuição de carga nem failover transparente. Em produção, um Application Load Balancer (ALB) centralizaria o tráfego e desacoplaria a URL pública da instância específica.
-- **HTTP sem TLS:** a ausência de HTTPS expõe credenciais em trânsito. Em produção com ACM disponível, o ALB faria terminação TLS com certificado gerenciado.
-- **Armazenamento de sessão local:** o Moodle armazena sessões no banco e em disco local da EC2. Com múltiplas instâncias, seria necessário armazenamento de sessão compartilhado (ElastiCache Redis) e sistema de arquivos compartilhado (EFS) para os arquivos do Moodle.
+**Caminho de evolução:**
 
-**Caminho de evolução no Terraform:**
+1. `aws_launch_template` + `aws_autoscaling_group` com mínimo de 2 instâncias, usando as duas subnets públicas já existentes.
+2. `aws_lb` (ALB) com terminação TLS via ACM e health check em `/login/index.php`.
+3. `multi_az = true` no RDS e backups automáticos com retenção maior.
+4. `aws_efs_file_system` para o `moodledata` compartilhado e ElastiCache Redis para sessões e cache.
+5. Imagem publicada no Amazon ECR em vez de build na própria EC2, reduzindo o tempo de boot.
+6. Backend remoto S3 com lock para o state.
 
-Para escalar a solução, as principais mudanças necessárias seriam:
-
-1. Substituir `aws_instance` por `aws_launch_template` + `aws_autoscaling_group`
-2. Adicionar `aws_lb` e `aws_lb_target_group` para o ALB
-3. Mudar `multi_az = true` na `aws_db_instance`
-4. Adicionar `aws_elasticache_replication_group` para sessões Redis
-5. Adicionar `aws_efs_file_system` + `aws_efs_mount_target` para arquivos compartilhados
-
-No contexto do AWS Learn Lab, essas evoluções estão fora do escopo da implementação atual do desafio.
+Essas mudanças estão fora do escopo do Learner Lab e do desafio.
 
 ---
 
 ## Custo Estimado
 
-> **Premissas:** região `us-east-1` (Leste dos EUA — N. da Virgínia), precificação On-Demand, 100% de utilização, estimativa mensal baseada em 730 horas, sem comprometimento de longo prazo (Reserved Instances). Os valores já incluem os custos de armazenamento associados a cada serviço. A estimativa não inclui custos variáveis ou serviços não configurados, como transferência de dados. Os valores podem variar conforme o uso efetivo e a região.
+> **Premissas:** região `us-east-1`, On-Demand, 730 horas/mês, sem Reserved Instances ou Savings Plans. Custos variáveis (transferência de dados, snapshots, requisições) não estão incluídos. Valores em USD. No Learner Lab, o uso é debitado dos créditos educacionais da conta.
 
-| Serviço | Configuração | Custo (USD/mês) |
+| Serviço | Configuração (igual ao Terraform) | Custo (USD/mês) |
 |---|---|---|
-| Amazon EC2 | `t3.medium`, Linux, On-Demand, 730h, EBS gp3 8 GB incluído | USD 31,01 |
-| Amazon RDS for PostgreSQL | `db.t3.micro`, Single-AZ, On-Demand, 730h, 20 GB gp2 incluído | USD 15,44 |
-| **Total mensal** | | **USD 46,45** |
-| **Custo inicial** | | **USD 0,00** |
+| Amazon EC2 | `t3.micro`, Linux, On-Demand, 730 h (7,59) + EBS gp3 16 GB (1,28) | 8,87 |
+| Amazon RDS for PostgreSQL | `db.t3.micro`, Single-AZ, 730 h + 20 GB gp2 | 15,44 |
+| **Subtotal (AWS Pricing Calculator)** | | **24,31** |
+| IPv4 público da EC2 | 1 endereço × USD 0,005/h × 730 h | 3,65 |
+| VPC, subnets, IGW, route tables, Security Groups | sem cobrança | 0,00 |
+| **Total mensal estimado** | | **27,96** |
+| **Custo inicial** | | **0,00** |
 
-> **Estimativa gerada na AWS Pricing Calculator:**
-> [https://calculator.aws/#/estimate?id=6c722655f110da07df40c7e501475f0c89929300](https://calculator.aws/#/estimate?id=6c722655f110da07df40c7e501475f0c89929300)
+**Estimativa gerada na AWS Pricing Calculator (EC2 + RDS):**  
+[https://calculator.aws/#/estimate?id=234b16dd6885e02d6bf40c21f1332ee99d90c122](https://calculator.aws/#/estimate?id=234b16dd6885e02d6bf40c21f1332ee99d90c122)
 
-> **Observação sobre o Learn Lab:** o AWS Learn Lab fornece créditos educacionais que podem cobrir parte dos custos durante a sessão ativa. No entanto, esses créditos não garantem ausência de cobranças para todos os recursos ou todas as contas.
+> A cobrança de IPv4 público (USD 0,005 por IP por hora, desde fevereiro de 2024) é feita no serviço Amazon VPC e não aparece na estimativa de EC2 da calculadora, por isso foi somada à parte.
+>
+> **Uso real no Learner Lab:** a infraestrutura só fica ligada durante as sessões de teste e é destruída depois. Com 4 horas de uso, por exemplo, o custo fica em torno de USD 0,15 (27,96 ÷ 730 × 4).
