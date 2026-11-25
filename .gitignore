@@ -167,5 +167,11 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 
-# Terraform working directory
+# Terraform — diretório de trabalho, states, planos e logs
 .terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+crash.log
+crash.*.log

@@ -28,3 +28,19 @@ def repo_root() -> Path:
     without hard-coding absolute paths.
     """
     return Path(__file__).parent.parent
+
+
+# ---------------------------------------------------------------------------
+# Perfil do Hypothesis sem limite de tempo por exemplo (deadline).
+# No Windows, a primeira chamada a `git check-ignore` em
+# test_gitignore_patterns.py pode levar mais de 200 ms (inicialização do Git e
+# varredura do antivírus sobre o arquivo temporário), o que gera
+# DeadlineExceeded/FlakyFailure mesmo quando o arquivo É ignorado.
+# Desativar o deadline não altera o que os testes verificam, apenas remove o
+# limite de tempo. Os demais parâmetros de cada teste (ex.: max_examples)
+# continuam definidos nos próprios @settings.
+# ---------------------------------------------------------------------------
+from hypothesis import settings as _hypothesis_settings
+
+_hypothesis_settings.register_profile("sem-deadline", deadline=None)
+_hypothesis_settings.load_profile("sem-deadline")

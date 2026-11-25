@@ -1,0 +1,14 @@
+# Normaliza fim de linha para LF no repositório (o CI e a EC2 rodam Linux).
+* text=auto eol=lf
+
+# Scripts e configurações sempre em LF, inclusive no checkout no Windows:
+# o user_data.sh é renderizado do working tree e um CRLF quebraria o Bash na EC2.
+*.sh   text eol=lf
+*.tf   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+# Binários
+*.png binary
+*.jpg binary
+*.gif binary
