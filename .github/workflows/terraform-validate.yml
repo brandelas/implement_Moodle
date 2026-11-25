@@ -15,6 +15,9 @@ on:
       - main
     paths:
       - "terraform/**"
+  # Execução manual (aba Actions → Run workflow), útil para validar uma branch
+  # sem abrir Pull Request.
+  workflow_dispatch:
 
 jobs:
   terraform-validate:
