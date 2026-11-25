@@ -14,7 +14,7 @@ As tasks estão ordenadas para minimizar dependências circulares e permitir val
 
 ## Status de execução
 
-Atualizado após a implementação. `[x]` = concluída e conferida no código; `[ ]` = depende de execução ainda não registrada.
+Atualizado após a implementação. `[x]` = concluída e conferida no código; `[ ]` = depende de execução ainda não registrada. Validação local registrada em 25/11/2026: `terraform fmt -check -recursive` (exit 0), `terraform validate` na raiz e nos módulos (`Success!`) e `pytest tests -v` (65 passed).
 
 - [x] TASK-01 — Estrutura de diretórios e arquivos
 - [x] TASK-02 — `variables.tf`
@@ -26,8 +26,8 @@ Atualizado após a implementação. `[x]` = concluída e conferida no código; `
 - [x] TASK-08 — Security Group `sg-app`
 - [x] TASK-09 — Security Group `sg-db`
 - [x] TASK-10 — `outputs.tf`
-- [ ] TASK-11 — Validação local (`fmt -check` e `validate`)
-- [ ] TASK-12 — Testes estruturais (`pytest`)
+- [x] TASK-11 — Validação local (`fmt -check` e `validate`)
+- [x] TASK-12 — Testes estruturais (`pytest`)
 
 ---
 

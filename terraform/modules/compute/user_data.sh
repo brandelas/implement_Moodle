@@ -84,7 +84,8 @@ if ! docker compose version > /dev/null 2>&1; then
   COMPOSE_RELEASE="v2.30.3"
   COMPOSE_BIN="/usr/libexec/docker/cli-plugins/docker-compose"
   mkdir -p /usr/libexec/docker/cli-plugins
-  curl -fsSL \
+  # --retry: tolera falha temporária de rede ou do GitHub durante o boot.
+  curl -fsSL --retry 3 --retry-delay 5 \
     "https://github.com/docker/compose/releases/download/$${COMPOSE_RELEASE}/docker-compose-linux-x86_64" \
     -o "$${COMPOSE_BIN}"
   chmod +x "$${COMPOSE_BIN}"

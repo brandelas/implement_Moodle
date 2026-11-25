@@ -14,13 +14,13 @@ Tasks 01–03 não dependem de AWS. Task 04 requer validação local após os ar
 
 ## Status de execução
 
-Atualizado após a implementação. `[x]` = concluída e conferida no código; `[ ]` = depende de execução ainda não registrada.
+Atualizado após a implementação. `[x]` = concluída e conferida no código; `[ ]` = depende de execução ainda não registrada. Validação local registrada em 25/11/2026: `terraform fmt -check -recursive` (exit 0), `terraform validate` na raiz e nos módulos (`Success!`) e `pytest tests -v` (65 passed).
 
 - [x] TASK-01 — `variables.tf`
 - [x] TASK-02 — `outputs.tf`
 - [x] TASK-03 — `main.tf`
-- [ ] TASK-04 — Validação local
-- [ ] TASK-05 — Testes estruturais (`pytest`)
+- [x] TASK-04 — Validação local
+- [x] TASK-05 — Testes estruturais (`pytest`)
 - [x] TASK-06 — Integração com a configuração raiz
 
 ---
