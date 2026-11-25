@@ -1,0 +1,20 @@
+# Copie para terraform.tfvars (ignorado pelo Git) e preencha.
+#   Copy-Item terraform.tfvars.example terraform.tfvars    # PowerShell
+# NUNCA commite o terraform.tfvars real.
+
+# Seu IP público com /32. Descubra com: (Invoke-RestMethod https://checkip.amazonaws.com).Trim()
+ssh_allowed_cidr = "203.0.113.10/32"
+
+# Conteúdo do arquivo .pub (ex.: Get-Content $HOME\.ssh\moodle-key.pub)
+ec2_public_key = "ssh-ed25519 AAAA... seu-usuario"
+
+# Credenciais do banco (mín. 8 caracteres; sem / @ " ou espaço)
+db_username = "moodleadmin"
+db_password = "troque-esta-senha"
+
+# Senha do administrador do Moodle (mín. 8 caracteres, com maiúscula, minúscula, número e símbolo)
+moodle_admin_password = "Troque-Esta-Senha-1!"
+
+# Opcionais (já têm valor padrão)
+# ec2_instance_type = "t3.micro"
+# repo_branch       = "main"
