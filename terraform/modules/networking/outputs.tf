@@ -1,7 +1,7 @@
 # =============================================================================
 # outputs.tf — Módulo networking
 # Exporta os IDs dos recursos criados para consumo pelos módulos compute e database.
-# TODO: Conectar estes outputs às variáveis dos módulos compute e database na raiz.
+# TODO: Exportar novos IDs aqui caso outros módulos passem a depender da rede.
 # =============================================================================
 
 output "vpc_id" {

@@ -1,7 +1,7 @@
 # =============================================================================
 # main.tf — Módulo networking
 # Recursos AWS: VPC, subnets, IGW, route tables e security groups.
-# TODO: Implementar subnets, IGW, route tables e security groups (TASK-04 a TASK-09).
+# TODO: Avaliar VPC Endpoints/NAT se as subnets privadas precisarem de saída no futuro.
 # =============================================================================
 
 terraform {
@@ -108,7 +108,7 @@ resource "aws_route_table_association" "public" {
 # -----------------------------------------------------------------------------
 resource "aws_security_group" "sg_app" {
   name        = "${var.project_name}-sg-app"
-  description = "Security Group da EC2 — Moodle"
+  description = "Security Group da EC2 - Moodle (HTTP publico, SSH restrito)"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -149,7 +149,7 @@ resource "aws_security_group" "sg_app" {
 # -----------------------------------------------------------------------------
 resource "aws_security_group" "sg_db" {
   name        = "${var.project_name}-sg-db"
-  description = "Security Group do RDS — acesso somente a partir do sg-app"
+  description = "Security Group do RDS - PostgreSQL somente a partir do sg-app"
   vpc_id      = aws_vpc.main.id
 
   ingress {
