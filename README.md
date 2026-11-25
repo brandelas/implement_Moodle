@@ -102,7 +102,7 @@ Antes de começar, verifique se você tem as seguintes ferramentas instaladas e 
 │   └── workflows/                       # Pipelines de CI/CD (GitHub Actions)
 │       ├── docker-lint.yml              #   - Lint do Dockerfile (hadolint)
 │       ├── health-check.yml             #   - Health check manual (workflow_dispatch)
-│       ├── terraform-plan.yml           #   - Stub: terraform plan (a implementar)
+│       ├── terraform-plan.yml           #   - terraform plan em PR (comenta o plano) e manual
 │       └── terraform-validate.yml       #   - fmt-check + validate
 ├── docker/                              # Ambiente Docker local de referência (funcional)
 │   ├── .env.example                     #   - Variáveis de ambiente documentadas
@@ -119,6 +119,16 @@ Antes de começar, verifique se você tem as seguintes ferramentas instaladas e 
 │   └── troubleshooting.md              #   - Problemas comuns e soluções
 ├── scripts/
 │   └── health-check.sh                  # Verificação automatizada do Moodle
+├── terraform/                           # Infraestrutura AWS (implementada neste fork)
+│   ├── versions.tf / main.tf / variables.tf / outputs.tf  # Raiz que integra os módulos
+│   ├── terraform.tfvars.example         #   - Modelo de variáveis (sem segredos)
+│   └── modules/
+│       ├── networking/                  #   - VPC, subnets, IGW, route table, sg-app, sg-db
+│       ├── compute/                     #   - EC2, user_data.sh, docker-compose.prod.yml
+│       └── database/                    #   - RDS PostgreSQL 15 privado
+├── .kiro/specs/                         # Specs do Kiro (networking, compute, database)
+├── .agents/tasks/                       # Relatório do Kiro Workflow investigate
+├── screenshots/                         # Evidências da prova
 ├── tests/                               # Testes de propriedade (pytest + Hypothesis)
 │   ├── conftest.py                      #   - Fixtures compartilhadas (repo_root)
 │   ├── test_architecture_template_sections.py
@@ -137,7 +147,7 @@ Antes de começar, verifique se você tem as seguintes ferramentas instaladas e 
 └── README.md                            # Este arquivo (ponto de entrada)
 ```
 
-> **Nota:** o diretório `terraform/` **não** faz parte do template — você o cria como parte do desafio, instanciando os módulos `networking`, `compute` e `database`. Veja a seção [Infraestrutura AWS com Terraform](#infraestrutura-aws-com-terraform) e o [`CHALLENGE.md`](CHALLENGE.md).
+> **Nota:** o diretório `terraform/` não fazia parte do template original; ele foi criado neste fork como parte do desafio, instanciando os módulos `networking`, `compute` e `database`. Veja a seção [Infraestrutura AWS com Terraform](#infraestrutura-aws-com-terraform) e o [`CHALLENGE.md`](CHALLENGE.md).
 
 
 

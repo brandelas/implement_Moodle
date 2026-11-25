@@ -14,7 +14,7 @@ As tasks estão ordenadas para minimizar dependências circulares e permitir val
 
 ## Status de execução
 
-Atualizado após a implementação. `[x]` = concluída e conferida no código; `[ ]` = depende de execução ainda não registrada. Validação local registrada em 25/11/2026: `terraform fmt -check -recursive` (exit 0), `terraform validate` na raiz e nos módulos (`Success!`) e `pytest tests -v` (65 passed).
+Atualizado após a implementação. `[x]` = concluída e conferida no código; `[ ]` = depende de execução ainda não registrada. Validação local registrada em 25/11/2026: `terraform fmt -check -recursive` (exit 0), `terraform validate` na raiz e nos módulos (`Success!`) e `pytest tests -v` (65 passed). `terraform plan` executado com credenciais do Learner Lab, local e no GitHub Actions: `Plan: 15 to add, 0 to change, 0 to destroy`, sem `apply`.
 
 - [x] TASK-01 — `variables.tf`
 - [x] TASK-02 — `outputs.tf`
@@ -26,7 +26,7 @@ Atualizado após a implementação. `[x]` = concluída e conferida no código; `
 - [x] TASK-08 — Testes estruturais (`pytest`)
 - [x] TASK-09 — Integração com a configuração raiz
 - [x] TASK-10 — Revisão de segurança
-- [ ] TASK-11 — `terraform plan` com credenciais AWS ativas
+- [x] TASK-11 — `terraform plan` com credenciais AWS ativas
 
 ---
 
