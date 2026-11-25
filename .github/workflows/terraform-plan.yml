@@ -1,135 +1,155 @@
-# TODO: Complete este workflow para executar o `terraform plan` quando acionado
-# manualmente via GitHub Actions (workflow_dispatch).
+# =============================================================================
+# Terraform Plan
 #
-# Este arquivo é um stub educacional. Você deve implementar cada seção marcada
-# com # TODO: abaixo antes de usar este workflow no seu projeto.
+# Gatilhos (atende às duas fontes de requisitos):
+#   - pull_request para main: exigido pelo enunciado da prova; o plano é
+#     publicado como comentário na PR.
+#   - workflow_dispatch: exigido pela rubrica do template (execução manual).
 #
-# PRÉ-REQUISITO — Secrets do repositório:
-# Antes de habilitar este workflow, configure os seguintes secrets em:
-#   GitHub → Settings → Secrets and variables → Actions → New repository secret
+# O workflow FALHA (exit != 0) se init, validate ou plan retornarem erro.
+# Ele nunca executa apply.
 #
-#   AWS_ACCESS_KEY_ID      → Access Key ID das credenciais temporárias do Learn Lab
-#   AWS_SECRET_ACCESS_KEY  → Secret Access Key das credenciais temporárias do Learn Lab
-#   AWS_SESSION_TOKEN      → Session Token (obrigatório no AWS Learn Lab, pois usa
-#                            credenciais temporárias via STS/IAM Role)
+# Secrets necessários (Settings → Secrets and variables → Actions):
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+#       → credenciais temporárias do Learner Lab (expiram em ~4 h; atualize
+#         antes de cada execução, em "AWS Details" no portal AWS Academy).
+#   TF_SSH_ALLOWED_CIDR, TF_EC2_PUBLIC_KEY, TF_DB_USERNAME, TF_DB_PASSWORD,
+#   TF_MOODLE_ADMIN_PASSWORD
+#       → variáveis obrigatórias do Terraform (sem valor padrão).
 #
-# ⚠️  ATENÇÃO: As credenciais do AWS Learn Lab expiram em ~4 horas. Atualize os
-#     secrets no GitHub antes de cada execução do workflow, copiando os valores
-#     do portal AWS Academy (botão "AWS Details").
-#
-# REFERÊNCIA: https://github.com/aws-actions/configure-aws-credentials
+# Observação: o backend é local, então o plan no CI parte de um state vazio e
+# sempre mostra a criação completa da infraestrutura.
+# =============================================================================
 
 name: Terraform Plan
 
-# TODO: Configure o trigger do workflow.
-# Sugestão: use `workflow_dispatch` para execução manual enquanto desenvolve,
-# podendo adicionar `push` para `main` e `pull_request` depois.
-#
-# Exemplo com workflow_dispatch (recomendado para o Learn Lab):
-#
-#   on:
-#     workflow_dispatch:
-#       inputs:
-#         terraform_dir:
-#           description: 'Diretório raiz do Terraform'
-#           required: false
-#           default: 'terraform'
-#
-# Exemplo combinando push + pull_request + dispatch:
-#
-#   on:
-#     push:
-#       branches:
-#         - main
-#       paths:
-#         - "terraform/**"
-#     pull_request:
-#       branches:
-#         - main
-#       paths:
-#         - "terraform/**"
-#     workflow_dispatch:
-on: {}
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-plan.yml"
+  workflow_dispatch:
+    inputs:
+      terraform_dir:
+        description: "Diretório raiz do Terraform"
+        required: false
+        default: "terraform"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: terraform-plan-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # TODO: Renomeie o job abaixo (sugestão: `terraform-plan`) e remova o
-  # `placeholder` quando implementar o workflow completo.
-  placeholder:
+  terraform-plan:
+    name: Terraform Plan
     runs-on: ubuntu-latest
-    if: false  # TODO: Remova esta linha ao implementar o workflow
-    steps:
-      - name: Placeholder
-        run: echo "TODO - implemente este workflow"
 
-  # TODO: Implemente o job `terraform-plan` abaixo, seguindo os steps comentados.
-  # Substitua o job `placeholder` acima pelo conteúdo a seguir (descomentado):
-  #
-  # terraform-plan:
-  #   name: Terraform Plan
-  #   runs-on: ubuntu-latest
-  #
-  #   steps:
-  #
-  #     # TODO: Step 1 — Checkout do repositório
-  #     # Faz o checkout do código para que o runner tenha acesso aos arquivos
-  #     # do Terraform. Use a action oficial:
-  #     #
-  #     # - name: Checkout do repositório
-  #     #   uses: actions/checkout@v4
-  #
-  #     # TODO: Step 2 — Configurar credenciais AWS
-  #     # Use a action oficial da AWS para injetar as credenciais temporárias.
-  #     # Os valores vêm dos secrets configurados no repositório (veja o cabeçalho
-  #     # deste arquivo). O campo `aws-session-token` é obrigatório no Learn Lab.
-  #     #
-  #     # - name: Configurar credenciais AWS
-  #     #   uses: aws-actions/configure-aws-credentials@v4
-  #     #   with:
-  #     #     aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #     #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #     #     aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
-  #     #     aws-region:            us-east-1
-  #     #     # TODO: Ajuste a região se necessário
-  #
-  #     # TODO: Step 3 — Instalar o Terraform CLI
-  #     # Instala a versão do Terraform definida no seu versions.tf.
-  #     # Opcionalmente, fixe a versão com o parâmetro `terraform_version`.
-  #     #
-  #     # - name: Setup Terraform
-  #     #   uses: hashicorp/setup-terraform@v3
-  #     #   with:
-  #     #     terraform_version: "~1.7"
-  #     #     # TODO: Ajuste a versão conforme declarado no seu terraform/versions.tf
-  #
-  #     # TODO: Step 4 — Terraform Init
-  #     # Inicializa o backend e baixa os providers. Se você configurou um backend
-  #     # S3 (backend.tf), as credenciais AWS do Step 2 serão usadas aqui.
-  #     # Remova `-backend=false` quando o backend S3/DynamoDB estiver configurado.
-  #     #
-  #     # - name: Terraform Init
-  #     #   run: terraform init -backend=false
-  #     #   working-directory: terraform
-  #     #   # TODO: Remova `-backend=false` após configurar o backend remoto
-  #     #   # TODO: Ajuste o working-directory se necessário
-  #
-  #     # TODO: Step 5 — Terraform Plan
-  #     # Gera o plano de execução e salva em `tfplan` para auditoria.
-  #     # A flag `-out=tfplan` é importante para garantir que o `apply` posterior
-  #     # execute exatamente o que foi planejado (sem surpresas).
-  #     # O exit code 1 indica erro; exit code 2 indica mudanças pendentes (normal).
-  #     #
-  #     # - name: Terraform Plan
-  #     #   run: terraform plan -out=tfplan
-  #     #   working-directory: terraform
-  #     #   # TODO: Adicione variáveis via -var ou -var-file se necessário, ex.:
-  #     #   #   run: terraform plan -out=tfplan -var-file="terraform.tfvars"
-  #
-  #     # TODO: (Opcional) Step 6 — Publicar o resumo do plano como comentário no PR
-  #     # Você pode usar `terraform show -no-color tfplan` para exibir o plano
-  #     # como texto e depois adicionar ao resumo do job com:
-  #     #
-  #     # - name: Exibir resumo do plano
-  #     #   run: |
-  #     #     echo "## Terraform Plan" >> $GITHUB_STEP_SUMMARY
-  #     #     terraform show -no-color tfplan >> $GITHUB_STEP_SUMMARY
-  #     #   working-directory: terraform
+    defaults:
+      run:
+        working-directory: ${{ github.event.inputs.terraform_dir || 'terraform' }}
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_ssh_allowed_cidr: ${{ secrets.TF_SSH_ALLOWED_CIDR }}
+      TF_VAR_ec2_public_key: ${{ secrets.TF_EC2_PUBLIC_KEY }}
+      TF_VAR_db_username: ${{ secrets.TF_DB_USERNAME }}
+      TF_VAR_db_password: ${{ secrets.TF_DB_PASSWORD }}
+      TF_VAR_moodle_admin_password: ${{ secrets.TF_MOODLE_ADMIN_PASSWORD }}
+
+    steps:
+      # Step 1 — Checkout do código
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      # Step 2 — Credenciais temporárias do Learner Lab (session token obrigatório)
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      # Step 3 — Terraform CLI (wrapper desligado para capturar o exit code real)
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+          terraform_wrapper: false
+
+      # Step 4 — Init no diretório raiz do Terraform
+      - name: Terraform Init
+        run: terraform init -no-color
+
+      # Step 5 — Validate
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      # Step 6 — Plan; a saída é salva para o comentário mesmo em caso de erro
+      - name: Terraform Plan
+        id: plan
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan.txt
+
+      - name: Resumo do plano no job
+        if: always()
+        run: |
+          {
+            echo "## Terraform Plan — ${{ steps.plan.outcome }}"
+            echo '```'
+            tail -c 60000 plan.txt 2>/dev/null || echo "plan.txt não gerado"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Step 7 — Publicar o plano como comentário na PR
+      - name: Comentar o plano na PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PLAN_OUTCOME: ${{ steps.plan.outcome }}
+          PLAN_DIR: ${{ github.event.inputs.terraform_dir || 'terraform' }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = `${process.env.PLAN_DIR}/plan.txt`;
+            let plan = fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : 'plan.txt não gerado';
+            const max = 60000;
+            if (plan.length > max) {
+              plan = '... (saída truncada; veja o log completo do job)\n' + plan.slice(-max);
+            }
+            const icon = process.env.PLAN_OUTCOME === 'success' ? '✅' : '❌';
+            const body = [
+              `### ${icon} Terraform Plan — \`${process.env.PLAN_OUTCOME}\``,
+              '',
+              `Workflow: [${context.workflow} #${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              '',
+              '<details><summary>Mostrar plano</summary>',
+              '',
+              '```',
+              plan,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      # Garante exit code != 0 quando o plan falha
+      - name: Falhar se o plan retornou erro
+        if: steps.plan.outcome == 'failure'
+        run: |
+          echo "terraform plan falhou — veja o log acima."
+          exit 1
