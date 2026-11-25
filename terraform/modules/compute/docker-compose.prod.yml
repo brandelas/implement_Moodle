@@ -1,0 +1,34 @@
+# =============================================================================
+# Docker Compose — Produção (EC2 + RDS)
+# Usado pelo user_data.sh: docker compose -f terraform/modules/compute/docker-compose.prod.yml up -d
+# Diferenças em relação ao docker/docker-compose.yml (local):
+#   - sem serviço PostgreSQL: o banco é o RDS, em subnet privada;
+#   - Apache publicado na porta 80 do host (Security Group sg-app);
+#   - .env gerado no boot pelo user_data.sh (chmod 600), nunca versionado.
+# TODO: Ajustar caminhos e portas conforme o ambiente de produção.
+# =============================================================================
+
+services:
+  moodle:
+    build:
+      context: ../../../docker
+      dockerfile: Dockerfile
+    image: moodle-app:4.1
+    restart: unless-stopped
+
+    # format: raw (Compose >= 2.30) lê os valores literalmente, sem interpolar
+    # caracteres como $ presentes nas senhas.
+    env_file:
+      - path: ../../../docker/.env
+        format: raw
+
+    ports:
+      - "80:80"
+
+    # Somente /var/moodledata é persistido. O código do Moodle permanece na
+    # camada da imagem (D-09 da Spec de compute).
+    volumes:
+      - moodle_www:/var/moodledata
+
+volumes:
+  moodle_www:
